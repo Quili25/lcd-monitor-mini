@@ -1,0 +1,212 @@
+# Release: push to main → SemVer bump → PyInstaller + Inno → GitHub Release
+# lcd-monitor-mini only. No Cloudflare R2 / Velopack / atlas249 scripts.
+# See docs/VERSIONING.md and docs/PACKAGING.md
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "SemVer bump"
+        required: true
+        default: patch
+        type: choice
+        options: [patch, minor, major, skip]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-lcd-monitor-mini-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    if: ${{ github.ref == 'refs/heads/main' }}
+
+    steps:
+      - name: Context
+        shell: pwsh
+        run: |
+          Write-Host "event=${{ github.event_name }}"
+          Write-Host "ref=${{ github.ref }}"
+          Write-Host "ref_name=${{ github.ref_name }}"
+          Write-Host "sha=${{ github.sha }}"
+          Write-Host "actor=${{ github.actor }}"
+          if ("${{ github.ref }}" -ne "refs/heads/main") {
+            throw "Refusing to release from non-main ref: ${{ github.ref }}"
+          }
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-app.txt
+
+      - name: Detect version bump
+        id: bump
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $kind = "${{ inputs.bump }}"
+          } else {
+            $msg = (git log -1 --pretty=%B | Out-String).Trim()
+            Write-Host "Commit message:`n$msg"
+            $kind = & ./scripts/detect-version-bump.ps1 -Message $msg
+          }
+          $kind = ($kind | Select-Object -Last 1).ToString().Trim()
+          Write-Host "Bump kind: [$kind]"
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "kind=$kind`n")
+
+      - name: Skip release
+        if: ${{ steps.bump.outputs.kind == 'skip' }}
+        shell: pwsh
+        run: Write-Host 'Release skipped (skip release / version skip).'
+
+      - name: Validate
+        if: ${{ steps.bump.outputs.kind != 'skip' }}
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-app.txt
+          python -m compileall -q app
+          if ($LASTEXITCODE -ne 0) { throw "compileall failed ($LASTEXITCODE)" }
+          $env:QT_QPA_PLATFORM = "offscreen"
+          python -c "from app import __version__; from app.config_store import load_config; load_config(); print('validate ok', __version__)"
+
+      - name: Bump VERSION
+        if: ${{ steps.bump.outputs.kind != 'skip' }}
+        id: version
+        shell: pwsh
+        env:
+          BUMP_KIND: ${{ steps.bump.outputs.kind }}
+        run: |
+          $kind = if ([string]::IsNullOrWhiteSpace($env:BUMP_KIND)) { '' } else { $env:BUMP_KIND.Trim() }
+          if ($kind -notin @('patch','minor','major')) {
+            throw "Invalid bump kind from previous step: [$kind]"
+          }
+          $v = & ./scripts/bump-version.ps1 -Bump $kind
+          $v = ($v | Select-Object -Last 1).ToString().Trim()
+          if ($v -notmatch '^\d+\.\d+\.\d+$') { throw "bump-version returned invalid version: [$v]" }
+          Write-Host "New version: $v"
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "version=$v`n")
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "tag=v$v`n")
+
+      - name: Commit VERSION and tag
+        if: ${{ steps.bump.outputs.kind != 'skip' }}
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          $v = $env:VERSION.Trim()
+          $tag = $env:TAG.Trim()
+          Write-Host "Committing VERSION=$v tag=$tag"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION app/__init__.py packaging/version_info.txt packaging/lcd-monitor-mini.iss
+          git status
+          git commit -m "chore: release $v [skip release]"
+          if ($LASTEXITCODE -ne 0) { throw "git commit failed ($LASTEXITCODE)" }
+          git tag -a $tag -m "Release $v"
+          if ($LASTEXITCODE -ne 0) { throw "git tag failed ($LASTEXITCODE)" }
+          git push origin HEAD:refs/heads/main
+          if ($LASTEXITCODE -ne 0) { throw "git push main failed ($LASTEXITCODE) — check branch protection / contents:write" }
+          git push origin "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw "git push tag failed ($LASTEXITCODE)" }
+
+      - name: Install Inno Setup
+        if: ${{ steps.bump.outputs.kind != 'skip' }}
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed ($LASTEXITCODE)" }
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe not found after Inno Setup install" }
+          Write-Host "ISCC: $iscc"
+
+      - name: Create venv and pack
+        if: ${{ steps.bump.outputs.kind != 'skip' }}
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $v = $env:VERSION.Trim()
+          python -m venv .venv
+          $py = Join-Path $PWD ".venv\Scripts\python.exe"
+          $pip = Join-Path $PWD ".venv\Scripts\pip.exe"
+          & $pip install --upgrade pip
+          & $pip install -r requirements-app.txt
+          & $pip install "pyinstaller>=6.0"
+          ./scripts/pack.ps1 -Version $v
+          if ($LASTEXITCODE -ne 0) { throw "pack.ps1 failed ($LASTEXITCODE)" }
+
+      - name: Publish GitHub Release
+        if: ${{ steps.bump.outputs.kind != 'skip' }}
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = $env:VERSION.Trim()
+          $tag = $env:TAG.Trim()
+          $setup = "dist\lcd-monitor-mini-Setup-$v.exe"
+          if (-not (Test-Path $setup)) { throw "Missing $setup" }
+
+          # Portable zip of onedir (optional convenience artifact)
+          $zip = "dist\lcd-monitor-mini-$v-windows-x64.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "dist\lcd-monitor-mini\*" -DestinationPath $zip -Force
+
+          $notes = @"
+          ## lcd-monitor-mini $v
+
+          Open-source Windows tray app for a 3.5`" USB serial LCD (Rev A).
+
+          ### Assets
+          - ``lcd-monitor-mini-Setup-$v.exe`` — recommended installer (Inno Setup)
+          - ``lcd-monitor-mini-$v-windows-x64.zip`` — portable onedir
+
+          SmartScreen may warn until the binary is Authenticode-signed.
+          "@
+
+          gh release create $tag `
+            $setup `
+            $zip `
+            --title "lcd-monitor-mini $v" `
+            --notes $notes
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
+
+      - name: Summary
+        if: ${{ steps.bump.outputs.kind != 'skip' }}
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          $v = $env:VERSION
+          $tag = $env:TAG
+          $repo = "${{ github.repository }}"
+          $text = @"
+          ## Release $v
+          - Tag: ``$tag``
+          - GitHub Release: https://github.com/$repo/releases/tag/$tag
+          - Artifacts: Setup.exe + portable zip (no R2 upload)
+          "@
+          [System.IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "$text`n")

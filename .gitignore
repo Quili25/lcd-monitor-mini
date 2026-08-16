@@ -1,0 +1,51 @@
+# Python / venv
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.eggs/
+
+# Local runtime / secrets (never commit)
+*.log
+log.log
+.env
+.env.*
+!.env.example
+*.local.yaml
+config.local.yaml
+
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*~
+
+# Build / packaging outputs
+build/
+dist/
+*.spec.bak
+packaging/Output/
+
+# Local previews / scratch (dev scripts)
+.tmp_*.png
+screencap.png
+*.png.bak
+
+# Quality-gate / agent scratch (if ever used locally)
+.gate-reports/
+agent-transcripts/
+
+# PyInstaller / Inno leftovers
+warn-*.txt

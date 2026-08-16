@@ -1,0 +1,100 @@
+---
+author: "@omar"
+
+display:
+  DISPLAY_SIZE: 3.5"
+  DISPLAY_ORIENTATION: portrait
+  DISPLAY_RGB_LED: 40, 120, 200
+
+static_images:
+  BACKGROUND:
+    PATH: background.png
+    X: 0
+    Y: 0
+    WIDTH: 320
+    HEIGHT: 480
+
+static_text: {}
+
+widgets:
+  - type: label
+    text: OMAR
+    x: 16
+    y: 12
+    font_size: 28
+    color: [230, 236, 245]
+  - type: label
+    text: system monitor
+    x: 16
+    y: 44
+    font_size: 14
+    color: [120, 150, 180]
+  - type: text
+    x: 16
+    y: 88
+    bind: cpu_percent
+    label: CPU
+    font_size: 20
+    color: [240, 245, 250]
+  - type: bar
+    x: 16
+    y: 118
+    width: 288
+    height: 16
+    bind: cpu_percent
+    bar_color: [90, 180, 255]
+  - type: text
+    x: 16
+    y: 148
+    bind: cpu_temp
+    label: "CPU T"
+    font_size: 16
+  - type: text
+    x: 16
+    y: 200
+    bind: gpu_percent
+    label: GPU
+    font_size: 20
+  - type: bar
+    x: 16
+    y: 230
+    width: 288
+    height: 16
+    bind: gpu_percent
+    bar_color: [90, 220, 160]
+  - type: text
+    x: 16
+    y: 260
+    bind: gpu_temp
+    label: "GPU T"
+    font_size: 16
+  - type: text
+    x: 16
+    y: 312
+    bind: ram_percent
+    label: RAM
+    font_size: 20
+  - type: bar
+    x: 16
+    y: 342
+    width: 288
+    height: 16
+    bind: ram_percent
+    bar_color: [220, 170, 90]
+  - type: text
+    x: 16
+    y: 400
+    bind: net_down
+    label: DL
+    font_size: 16
+  - type: text
+    x: 160
+    y: 400
+    bind: net_up
+    label: UL
+    font_size: 16
+  - type: text
+    x: 16
+    y: 440
+    bind: time
+    font_size: 18
