@@ -1,0 +1,55 @@
+# Continuous integration — import/compile smoke (no packaging)
+# lcd-monitor-mini only — do not reuse atlas249 / other project workflows.
+name: CI
+
+on:
+  push:
+    branches: [staging, main]
+  pull_request:
+    branches: [staging, main]
+
+concurrency:
+  group: ci-lcd-monitor-mini-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-app.txt
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-app.txt
+
+      - name: Compile app package
+        shell: pwsh
+        run: |
+          python -m compileall -q app
+          if ($LASTEXITCODE -ne 0) { throw "compileall failed ($LASTEXITCODE)" }
+
+      - name: Import smoke
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          python -c @"
+          from app import __version__
+          from app.config_store import load_config
+          from app.theme_service import load_theme, list_themes
+          from app.renderer import set_anim_tuning
+          from app.protocol import ORIENT_PORTRAIT
+          assert __version__
+          cfg = load_config()
+          assert isinstance(cfg, dict)
+          print('ok', __version__, 'themes', len(list_themes()))
+          "@

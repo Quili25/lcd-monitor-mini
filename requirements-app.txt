@@ -1,0 +1,7 @@
+# Product app dependencies (on top of vendor requirements)
+PySide6>=6.6
+PyYAML>=6.0
+psutil>=5.9
+pyserial>=3.5
+Pillow>=10.0
+numpy>=1.26
