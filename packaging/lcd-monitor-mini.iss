@@ -3,7 +3,7 @@
 ; Build PyInstaller output first: dist\lcd-monitor-mini\
 
 #define MyAppName "lcd-monitor-mini"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "Omar"
 #define MyAppExeName "lcd-monitor-mini.exe"
 #define SourceDir "..\dist\lcd-monitor-mini\"
